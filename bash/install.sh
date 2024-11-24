@@ -8,27 +8,14 @@
 #   exit 1
 # fi
 
-# Create logs directory if it doesn't exist
-if [ ! -d "logs" ]; then
-    echo "Creating logs directory..."
-    mkdir -p logs
-fi
+# import functions.sh
+source bash/functions.sh
 
-# Add logs directory to .gitignore if not already present
-if ! grep -q "^logs/$" .gitignore; then
-    echo "Adding logs directory to .gitignore..."
-    echo "logs/" >> .gitignore
-fi
-
-# Set log file with timestamp
-LOG_FILE="logs/install_$(date '+%Y%m%d_%H%M%S').log"
-exec > >(tee -i "$LOG_FILE") 2>&1
-
-# Exit on error
-set -e
+# Set up logging
+setup_logging "install"
 
 # Define required CLI tools
-REQUIRED_TOOLS=("git" "aws" "az" "gcloud" "docker" "docker-compose" "helm" "kubectl" "terraform" "ansible")
+REQUIRED_TOOLS=("git" "aws" "az" "gcloud" "docker" "docker-compose" "helm" "kubectl" "terraform" "ansible" "k9s")
 # REQUIRED_TOOLS+=("tool1" "tool2" "tool3") # Add more tools as needed
 
 # Check for required command line tools
@@ -229,7 +216,7 @@ if kubectl cluster-info &> /dev/null; then
     echo "Cluster nodes:"
     kubectl get nodes
     echo "Cluster pods:"
-    kubectl get pods --all-namespaces
+    kubectl get pods --all-namespaces 
 else
     echo "Kubernetes cluster is not running or not accessible"
 fi
