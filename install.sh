@@ -9,8 +9,16 @@
 # fi
 
 # Create logs directory if it doesn't exist
-mkdir -p logs
-echo "logs/" >> .gitignore 2>/dev/null
+if [ ! -d "logs" ]; then
+    echo "Creating logs directory..."
+    mkdir -p logs
+fi
+
+# Add logs directory to .gitignore if not already present
+if ! grep -q "^logs/$" .gitignore; then
+    echo "Adding logs directory to .gitignore..."
+    echo "logs/" >> .gitignore
+fi
 
 # Set log file with timestamp
 LOG_FILE="logs/install_$(date '+%Y%m%d_%H%M%S').log"
@@ -19,13 +27,17 @@ exec > >(tee -i "$LOG_FILE") 2>&1
 # Exit on error
 set -e
 
+# Define required CLI tools
+REQUIRED_TOOLS=("git" "aws" "az" "gcloud" "docker" "docker-compose" "helm" "kubectl" "terraform" "ansible")
+# REQUIRED_TOOLS+=("tool1" "tool2" "tool3") # Add more tools as needed
+
 # Check for required command line tools
 echo "Checking for required CLI tools..."
-for tool in git aws az gcloud helm kubectl terraform ansible; do
+for tool in "${REQUIRED_TOOLS[@]}"; do
     if ! command -v $tool &> /dev/null; then
         echo "Warning: $tool is not installed"
     else
-        echo "$tool is installed: $($tool --version)"
+        echo "$tool is installed: $($tool --version 2>/dev/null)"
     fi
 done
 
@@ -99,6 +111,117 @@ if ! command -v kubectl &> /dev/null; then
     fi
 fi
 
+# Install and check Helm
+if ! command -v helm &> /dev/null; then
+    echo "Helm not found. Installing..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        brew install helm
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3
+        chmod 700 get_helm.sh
+        ./get_helm.sh
+        rm get_helm.sh
+    elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+        echo "Windows detected. Please install Helm manually."
+        exit 1
+    else
+        echo "Unsupported OS for Helm installation: $OSTYPE"
+        exit 1
+    fi
+fi
+
+# Install and check Terraform
+if ! command -v terraform &> /dev/null; then
+    echo "Terraform not found. Installing..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        brew install terraform
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        curl -fsSL -o terraform.zip https://releases.hashicorp.com/terraform/1.0.0/terraform_1.0.0_linux_amd64.zip
+        sudo unzip terraform.zip -d /usr/local/bin
+        rm terraform.zip
+    elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+        choco install terraform
+    else
+        echo "Unsupported OS for Terraform installation: $OSTYPE"
+        exit 1
+    fi
+fi
+
+# Install and check Ansible
+if ! command -v ansible &> /dev/null; then
+    echo "Ansible not found. Installing..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        brew install ansible
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        sudo apt-get install -y ansible
+    elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+        choco install ansible
+    else
+        echo "Unsupported OS for Ansible installation: $OSTYPE"
+        exit 1
+    fi
+fi
+
+# Install and check AWS CLI
+# if ! command -v aws &> /dev/null; then
+#     echo "AWS CLI not found. Installing..."
+#     if [[ "$OSTYPE" == "darwin"* ]]; then
+#         brew install awscli
+#     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+#         sudo apt-get install -y awscli
+#     elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+#         choco install awscli
+#     else
+#         echo "Unsupported OS for AWS CLI installation: $OSTYPE"
+#         exit 1
+#     fi
+# fi
+
+# Install and check Azure CLI
+# if ! command -v az &> /dev/null; then
+#     echo "Azure CLI not found. Installing..."
+#     if [[ "$OSTYPE" == "darwin"* ]]; then
+#         brew install azure-cli
+#     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+#         curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+#     elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+#         choco install azure-cli
+#     else
+#         echo "Unsupported OS for Azure CLI installation: $OSTYPE"
+#         exit 1
+#     fi
+# fi
+
+# Install and check Google Cloud SDK
+# if ! command -v gcloud &> /dev/null; then
+#     echo "Google Cloud SDK not found. Installing..."
+#     if [[ "$OSTYPE" == "darwin"* ]]; then
+#         brew install --cask google-cloud-sdk
+#     elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+#         curl -fsSL https://sdk.cloud.google.com | bash
+#     elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+#         choco install google-cloud-sdk
+#     else
+#         echo "Unsupported OS for Google Cloud SDK installation: $OSTYPE"
+#         exit 1
+#     fi
+# fi
+
+# Install and check K9s
+if ! command -v k9s &> /dev/null; then
+    echo "K9s not found. Installing..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        brew install k9s
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        curl -LO
+    elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+        choco install k9s
+    else
+        echo "Unsupported OS for K9s installation: $OSTYPE"
+        exit 1
+    fi
+fi
+
 # Check Kubernetes cluster status
 echo "Checking Kubernetes cluster status..."
 if kubectl cluster-info &> /dev/null; then
@@ -133,6 +256,14 @@ docker pull tensorflow/serving:latest  # For model serving
 
 # Create docker network if it doesn't exist
 docker network create data-engineering-network 2>/dev/null || true
+
+# Create Docker shared volume for MinIO and MySQL
+docker volume create minio_data 2>/dev/null || true
+docker volume create mysql_data 2>/dev/null || true
+
+# Check Docker containers status
+echo "Checking Docker containers status..."
+docker ps -a
 
 # Check available disk space
 echo "Checking available disk space..."
