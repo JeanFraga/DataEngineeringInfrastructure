@@ -117,6 +117,21 @@ if ! command -v helm &> /dev/null; then
     fi
 fi
 
+# Install and check K9s
+if ! command -v k9s &> /dev/null; then
+    echo "K9s not found. Installing..."
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        brew install k9s
+    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        curl -LO
+    elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
+        choco install k9s
+    else
+        echo "Unsupported OS for K9s installation: $OSTYPE"
+        exit 1
+    fi
+fi
+
 # Install and check Terraform
 if ! command -v terraform &> /dev/null; then
     echo "Terraform not found. Installing..."
@@ -194,59 +209,58 @@ fi
 #     fi
 # fi
 
-# Install and check K9s
-if ! command -v k9s &> /dev/null; then
-    echo "K9s not found. Installing..."
-    if [[ "$OSTYPE" == "darwin"* ]]; then
-        brew install k9s
-    elif [[ "$OSTYPE" == "linux-gnu"* ]]; then
-        curl -LO
-    elif [[ "$OSTYPE" == "msys"* || "$OSTYPE" == "cygwin"* ]]; then
-        choco install k9s
-    else
-        echo "Unsupported OS for K9s installation: $OSTYPE"
-        exit 1
-    fi
-fi
-
-# Check Kubernetes cluster status
-echo "Checking Kubernetes cluster status..."
-if kubectl cluster-info &> /dev/null; then
-    echo "Kubernetes cluster is running"
-    echo "Cluster nodes:"
-    kubectl get nodes
-    echo "Cluster pods:"
-    kubectl get pods --all-namespaces 
-else
-    echo "Kubernetes cluster is not running or not accessible"
-fi
-
 # Pull necessary Docker images
-echo "Pulling necessary Docker images..."
-docker pull postgres:latest # For metadata storage
-docker pull apache/airflow:latest # For workflow orchestration
-docker pull apache/nifi:latest # For data ingestion
-docker pull confluentinc/cp-kafka:latest # For event streaming
-docker pull confluentinc/cp-zookeeper:latest # For event streaming
-docker pull redis:latest # For caching
-docker pull apache/spark-py:latest # For data processing
-docker pull jupyter/pyspark-notebook:latest # For data exploration
-# Pull MLOps-specific containers
-echo "Pulling MLOps-specific containers..."
-docker pull minio/minio:latest  # For model artifact storage
-docker pull mysql:8.0  # For ML metadata storage
-docker pull jenkins/jenkins:lts  # For CI/CD pipelines
-docker pull grafana/grafana:latest  # For metrics visualization
-docker pull prom/prometheus:latest  # For metrics collection
-docker pull ghcr.io/mlflow/mlflow:latest  # For ML experiment tracking
-docker pull tensorflow/serving:latest  # For model serving
+# echo "Pulling necessary Docker images..."
+# docker pull postgres:latest # For metadata storage
+# docker pull apache/airflow:latest # For workflow orchestration
+# docker pull apache/nifi:latest # For data ingestion
+# docker pull confluentinc/cp-kafka:latest # For event streaming
+# docker pull confluentinc/cp-zookeeper:latest # For event streaming
+# # docker pull redis:latest # For caching
+# docker pull bitnami/spark:latest # For data processing
+# docker pull jupyter/pyspark-notebook:latest # For data exploration
+# # Pull MLOps-specific containers
+# echo "Pulling MLOps-specific containers..."
+# docker pull minio/minio:latest  # For model artifact storage
+# docker pull jenkins/jenkins:lts  # For CI/CD pipelines
+# docker pull grafana/grafana:latest  # For metrics visualization
+# docker pull prom/prometheus:latest  # For metrics collection
+# docker pull ghcr.io/mlflow/mlflow:latest  # For ML experiment tracking
+# docker pull tensorflow/serving:latest  # For model serving
 
-# Create docker network if it doesn't exist
-docker network create data-engineering-network 2>/dev/null || true
+echo "Installing MLOps components using helm..."
+# Check if the Bitnami repo is already added, if not add it, otherwise update it
+if ! helm repo list | grep -q 'https://charts.bitnami.com/bitnami'; then
+    echo "Adding Bitnami Helm repository..."
+    helm repo add bitnami https://charts.bitnami.com/bitnami
+else
+    echo "Updating Bitnami Helm repository..."
+    echo "Bitnami Helm repository already added."
+fi
 
-# Create Docker shared volume for MinIO and MySQL
-docker volume create minio_data 2>/dev/null || true
-docker volume create mysql_data 2>/dev/null || true
+# Update the Helm repository
+echo "Updating Bitnami Helm repository..."
+helm repo update
+
+# List of Helm charts to download
+charts=("airflow" "minio" "postgresql" "spark" "jupyterhub" "mlflow" "prometheus" "grafana" "jenkins")
+
+# Download each chart
+for chart in "${charts[@]}"; do
+    echo "Downloading $chart chart..."
+    helm pull bitnami/$chart --untar
+done
+
+echo "All specified Helm charts have been downloaded."
+
+# Create docker network for MLOps components
+echo "Creating Docker network for MLOps components..."
+docker network create MLOps-Infrastructure-network 2>/dev/null || true
+
+# Create Docker shared volume for MinIO and PostgreSQL
+echo "Creating Docker shared volumes for MinIO and PostgreSQL..."
+docker volume create minio-pv 2>/dev/null || true
+docker volume create postgresql-pv 2>/dev/null || true
 
 # Check Docker containers status
 echo "Checking Docker containers status..."
@@ -257,3 +271,7 @@ echo "Checking available disk space..."
 df -h /
 
 echo "MLOps components installation and checks completed!"
+echo "Please proceed with configuring the components as needed."
+
+# Call the function to check status
+check_status
